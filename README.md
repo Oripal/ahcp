@@ -4,6 +4,8 @@ An open protocol for lifecycle monitoring, health detection, and control signal 
 
 一个面向 AI 原生 Agent 平台的开放协议，定义生命周期监控、健康检测和控制信号传播。
 
+![AHCP Cheatsheet](assets/ahcp-cheatsheet.jpg)
+
 ---
 
 ## Why AHCP? | 为什么需要 AHCP？
