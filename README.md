@@ -32,29 +32,7 @@ AHCP fills this gap. | AHCP 填补了这一空白。
 
 ## Architecture | 架构
 
-```mermaid
-flowchart TB
-    subgraph Communication["Communication Layer | 通信层"]
-        direction LR
-        MCP["MCP\nTool Access"]
-        A2A["A2A\nAgent ↔ Agent"]
-        ACP["ACP\nAgent Comms"]
-        AGT["AGENTS.md\nBehavior Guidance"]
-    end
-
-    subgraph AHCP_Layer["AHCP — Liveness & Control Layer | 存活检测与控制层"]
-        AHCP["Agent Heartbeat & Control Protocol"]
-    end
-
-    subgraph Observability["Observability Layer | 可观测性层"]
-        OTel["OpenTelemetry AI SemConv"]
-    end
-
-    Communication --> AHCP_Layer --> Observability
-
-    style AHCP_Layer fill:#f97316,color:#fff,stroke:#ea580c
-    style AHCP fill:#f97316,color:#fff,stroke:none
-```
+![AHCP Protocol Stack Position](assets/ahcp-architecture.jpg)
 
 ## Status | 状态
 
