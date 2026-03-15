@@ -33,34 +33,27 @@ AHCP fills this gap. | AHCP 填补了这一空白。
 ## Architecture | 架构
 
 ```mermaid
-block-beta
-  columns 4
+flowchart TB
+    subgraph Communication["Communication Layer | 通信层"]
+        direction LR
+        MCP["MCP\nTool Access"]
+        A2A["A2A\nAgent ↔ Agent"]
+        ACP["ACP\nAgent Comms"]
+        AGT["AGENTS.md\nBehavior Guidance"]
+    end
 
-  block:comm:4
-    columns 4
-    MCP["🔧 MCP\nTool Access\n工具连接"]
-    A2A["🤝 A2A\nAgent ↔ Agent\nAgent 间通信"]
-    ACP["💬 ACP\nAgent Comms\nAgent 消息"]
-    AGENTS["📋 AGENTS.md\nBehavior Guidance\n行为指导"]
-  end
+    subgraph AHCP_Layer["AHCP — Liveness & Control Layer | 存活检测与控制层"]
+        AHCP["Agent Heartbeat & Control Protocol"]
+    end
 
-  space:4
+    subgraph Observability["Observability Layer | 可观测性层"]
+        OTel["OpenTelemetry AI SemConv"]
+    end
 
-  block:ahcp:4
-    AHCP["💓 AHCP — Agent Heartbeat & Control Protocol\nLiveness & Control Layer | 存活检测与控制层"]
-  end
+    Communication --> AHCP_Layer --> Observability
 
-  space:4
-
-  block:otel:4
-    OTel["📊 OpenTelemetry\nObservability Layer | 可观测性层"]
-  end
-
-  comm --> ahcp --> otel
-
-  style ahcp fill:#f97316,color:#fff,stroke:#ea580c
-  style comm fill:#e2e8f0,stroke:#94a3b8
-  style otel fill:#e2e8f0,stroke:#94a3b8
+    style AHCP_Layer fill:#f97316,color:#fff,stroke:#ea580c
+    style AHCP fill:#f97316,color:#fff,stroke:none
 ```
 
 ## Status | 状态
