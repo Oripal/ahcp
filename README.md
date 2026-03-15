@@ -32,23 +32,35 @@ AHCP fills this gap. | AHCP 填补了这一空白。
 
 ## Architecture | 架构
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AI Agent Platform                         │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │   MCP    │  │   A2A    │  │   ACP    │  │ AGENTS.md │  │
-│  │ Tool     │  │ Agent ↔  │  │ Agent    │  │ Behavior  │  │
-│  │ Access   │  │ Agent    │  │ Comms    │  │ Guidance  │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────────┘  │
-│       └──────────────┼──────────────┘                        │
-│              ┌───────┴───────┐                               │
-│              │     AHCP      │  ← Liveness & Control Layer  │
-│              └───────┬───────┘                               │
-│              ┌───────┴───────┐                               │
-│              │ OpenTelemetry │  ← Observability Layer        │
-│              └───────────────┘                               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+  columns 4
+
+  block:comm:4
+    columns 4
+    MCP["🔧 MCP\nTool Access\n工具连接"]
+    A2A["🤝 A2A\nAgent ↔ Agent\nAgent 间通信"]
+    ACP["💬 ACP\nAgent Comms\nAgent 消息"]
+    AGENTS["📋 AGENTS.md\nBehavior Guidance\n行为指导"]
+  end
+
+  space:4
+
+  block:ahcp:4
+    AHCP["💓 AHCP — Agent Heartbeat & Control Protocol\nLiveness & Control Layer | 存活检测与控制层"]
+  end
+
+  space:4
+
+  block:otel:4
+    OTel["📊 OpenTelemetry\nObservability Layer | 可观测性层"]
+  end
+
+  comm --> ahcp --> otel
+
+  style ahcp fill:#f97316,color:#fff,stroke:#ea580c
+  style comm fill:#e2e8f0,stroke:#94a3b8
+  style otel fill:#e2e8f0,stroke:#94a3b8
 ```
 
 ## Status | 状态
