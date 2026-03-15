@@ -1,0 +1,357 @@
+syntax = "proto3";
+
+package ahcp.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/voborspark/ahcp/proto/ahcp/v1;ahcpv1";
+option java_package = "dev.ahcp.proto.v1";
+
+// AHCP — Agent Heartbeat & Control Protocol v1.0-rc1
+//
+// Dual-layer heartbeat and control signal protocol for AI-native agent platforms.
+// Spec: https://github.com/voborspark/ahcp
+//
+// Field numbering convention:
+//   1-9:   Core fields
+//   10-14: Extended fields (parent_job_id, tenant_id, etc.)
+//   15-19: Observability fields (trace_id, span_id)
+//   20+:   Reserved for future use
+
+
+// ═══════════════════════════════════════════════════════════
+// Service Definitions
+//
+// Per Principle P-8, all RPCs flow from worker to scheduler.
+// Scheduler-to-worker control signals are delivered via
+// heartbeat responses (should_cancel, should_drain, should_suspend,
+// hitl_resolution).
+// ═══════════════════════════════════════════════════════════
+
+// WorkerService handles worker process lifecycle.
+service WorkerService {
+  // Register a worker with the scheduler. MUST be called before consuming jobs.
+  rpc RegisterWorker (RegisterWorkerRequest) returns (RegisterWorkerResponse);
+
+  // Periodic worker liveness signal. Response MAY carry drain signal.
+  rpc WorkerHeartbeat (WorkerHeartbeatRequest) returns (WorkerHeartbeatResponse);
+
+  // Clean shutdown notification.
+  rpc DeregisterWorker (DeregisterWorkerRequest) returns (DeregisterWorkerResponse);
+}
+
+// JobService handles job lifecycle.
+service JobService {
+  // Acknowledge job receipt. MUST be idempotent.
+  rpc StartJob (StartJobRequest) returns (StartJobResponse);
+
+  // Periodic job health signal with optional progress. Response MAY carry
+  // cancel, suspend, or HITL resolution signals.
+  rpc JobHeartbeat (JobHeartbeatRequest) returns (JobHeartbeatResponse);
+
+  // Report successful completion. MUST be idempotent.
+  rpc CompleteJob (CompleteJobRequest) returns (CompleteJobResponse);
+
+  // Report failure. Scheduler applies retry policy. MUST be idempotent.
+  rpc FailJob (FailJobRequest) returns (FailJobResponse);
+
+  // Confirm cancellation in response to should_cancel. MUST be idempotent.
+  rpc AcknowledgeCancel (AcknowledgeCancelRequest) returns (AcknowledgeCancelResponse);
+
+  // Confirm suspension in response to should_suspend. MUST be idempotent.
+  rpc ReportSuspended (ReportSuspendedRequest) returns (ReportSuspendedResponse);
+
+  // Reserved for future use.
+  // rpc BatchJobHeartbeat (BatchJobHeartbeatRequest) returns (BatchJobHeartbeatResponse);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Enums
+// ═══════════════════════════════════════════════════════════
+
+// Job state as confirmed by the scheduler.
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_SUBMITTED = 1;
+  JOB_STATE_QUEUED = 2;
+  JOB_STATE_RUNNING = 3;
+  JOB_STATE_COMPLETED = 4;
+  JOB_STATE_FAILED = 5;
+  JOB_STATE_CANCELLED = 6;
+  JOB_STATE_SUSPENDED = 7;
+  JOB_STATE_TIMEOUT = 8;
+  JOB_STATE_DEAD_LETTER = 9;
+}
+
+// Reason for job cancellation, set by the scheduler.
+enum CancelReason {
+  CANCEL_REASON_UNSPECIFIED = 0;
+  CANCEL_REASON_USER = 1;
+  CANCEL_REASON_TIMEOUT = 2;
+  CANCEL_REASON_BUDGET_EXCEEDED = 3;
+  CANCEL_REASON_SYSTEM = 4;
+  CANCEL_REASON_SUPERSEDED = 5;
+}
+
+// Reason for worker drain, set by the scheduler.
+enum DrainReason {
+  DRAIN_REASON_NONE = 0;
+  DRAIN_REASON_ROLLING_UPDATE = 1;
+  DRAIN_REASON_SCALE_DOWN = 2;
+  DRAIN_REASON_MAINTENANCE = 3;
+  DRAIN_REASON_RESOURCE_PRESSURE = 4;
+}
+
+// Retry backoff strategy.
+enum RetryBackoff {
+  RETRY_BACKOFF_UNSPECIFIED = 0;
+  RETRY_BACKOFF_FIXED = 1;
+  RETRY_BACKOFF_LINEAR = 2;
+  RETRY_BACKOFF_EXPONENTIAL = 3;
+}
+
+// Crash recovery strategy when a worker dies.
+enum CrashRecovery {
+  CRASH_RECOVERY_UNSPECIFIED = 0;
+  CRASH_RECOVERY_IMMEDIATE = 1;
+  CRASH_RECOVERY_GRACE_PERIOD = 2;
+}
+
+// Job completion status.
+enum CompletionStatus {
+  COMPLETION_STATUS_UNSPECIFIED = 0;
+  COMPLETION_STATUS_COMPLETE = 1;
+  COMPLETION_STATUS_PARTIAL = 2;
+}
+
+// HITL risk level (AI-native extension).
+enum HITLRiskLevel {
+  HITL_RISK_LEVEL_UNSPECIFIED = 0;
+  HITL_RISK_LEVEL_LOW = 1;
+  HITL_RISK_LEVEL_MEDIUM = 2;
+  HITL_RISK_LEVEL_HIGH = 3;
+}
+
+// HITL outcome (AI-native extension).
+enum HITLOutcome {
+  HITL_OUTCOME_UNSPECIFIED = 0;
+  HITL_OUTCOME_APPROVED = 1;
+  HITL_OUTCOME_REJECTED = 2;
+  HITL_OUTCOME_TIMEOUT = 3;
+}
+
+// AI operation category for timeout taxonomy (AI-native extension).
+enum OperationCategory {
+  OPERATION_CATEGORY_UNSPECIFIED = 0;
+  OPERATION_CATEGORY_LLM_CALL = 1;
+  OPERATION_CATEGORY_TOOL_SHORT = 2;
+  OPERATION_CATEGORY_TOOL_LONG = 3;
+  OPERATION_CATEGORY_HITL_WAIT = 4;
+  OPERATION_CATEGORY_MULTI_AGENT = 5;
+  OPERATION_CATEGORY_RATE_LIMITED = 6;
+}
+
+// Conformance level declared by worker at registration.
+enum ConformanceLevel {
+  CONFORMANCE_LEVEL_UNSPECIFIED = 0;
+  CONFORMANCE_LEVEL_CORE = 1;
+  CONFORMANCE_LEVEL_STANDARD = 2;
+  CONFORMANCE_LEVEL_FULL = 3;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Worker Lifecycle Messages
+// ═══════════════════════════════════════════════════════════
+
+message RegisterWorkerRequest {
+  string worker_id = 1;
+  repeated string capabilities = 2;
+  repeated string queues = 3;
+  int32 max_concurrent_jobs = 4;
+  map<string, string> metadata = 5;
+  string tenant_id = 10;                    // OPTIONAL: tenant isolation scope
+  string protocol_version = 11;             // OPTIONAL: e.g., "0.3"
+  ConformanceLevel conformance_level = 12;  // OPTIONAL: CORE / STANDARD / FULL
+}
+
+message RegisterWorkerResponse {
+  bool success = 1;
+  int64 heartbeat_interval_ms = 2;
+  int64 worker_heartbeat_timeout_ms = 3;
+  string message = 4;
+  string protocol_version = 5;              // Scheduler's protocol version
+}
+
+message WorkerHeartbeatRequest {
+  string worker_id = 1;
+  int32 active_job_count = 2;
+  float cpu_usage_pct = 3;
+  float memory_usage_pct = 4;
+  int32 available_capacity = 5;
+  map<string, string> status_metadata = 6;
+  string trace_id = 15;
+}
+
+message WorkerHeartbeatResponse {
+  bool success = 1;
+  google.protobuf.Timestamp ack_deadline = 2;
+  int64 next_heartbeat_within_ms = 3;       // Relative duration, immune to clock skew
+  DrainReason should_drain = 4;             // DRAIN_REASON_NONE = no drain
+  repeated string stale_job_ids = 5;
+}
+
+message DeregisterWorkerRequest {
+  string worker_id = 1;
+  string reason = 2;
+}
+
+message DeregisterWorkerResponse {
+  bool success = 1;
+  int32 orphaned_jobs = 2;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Job Lifecycle Messages
+// ═══════════════════════════════════════════════════════════
+
+message StartJobRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  string job_type = 3;
+  string parent_job_id = 10;                // OPTIONAL: for cascading cancel (§9.4)
+  string tenant_id = 11;                    // OPTIONAL: must match worker's tenant
+}
+
+message StartJobResponse {
+  bool success = 1;
+  string message = 2;
+  int64 heartbeat_interval_ms = 3;          // 0 = no heartbeat required
+  int64 job_heartbeat_timeout_ms = 4;
+  int64 execution_timeout_ms = 5;
+  int64 assignment_epoch = 6;               // Fencing token (§10.2). 0 is invalid.
+}
+
+message JobHeartbeatRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int64 assignment_epoch = 3;
+  JobProgress progress = 4;
+  string trace_id = 15;
+  string span_id = 16;
+}
+
+message JobHeartbeatResponse {
+  bool success = 1;                         // false = stale epoch; worker MUST stop
+  google.protobuf.Timestamp ack_deadline = 2;
+  int64 next_heartbeat_within_ms = 3;       // Relative duration, immune to clock skew
+  bool should_cancel = 4;
+  CancelReason cancel_reason = 5;
+  bool should_suspend = 6;
+  string suspend_reason = 7;
+  HITLResolution hitl_resolution = 8;       // Present when HITL request is resolved
+}
+
+message CompleteJobRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int64 assignment_epoch = 3;
+  bytes result_payload = 4;
+  CompletionStatus completion_status = 5;
+}
+
+message CompleteJobResponse {
+  bool success = 1;
+  string job_id = 2;
+  JobState state = 3;
+}
+
+message FailJobRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int64 assignment_epoch = 3;
+  string error_code = 4;
+  string error_message = 5;
+  bool retryable = 6;
+  bytes partial_result = 7;                 // OPTIONAL: partial results to preserve
+}
+
+message FailJobResponse {
+  bool success = 1;
+  string job_id = 2;
+  JobState state = 3;                       // QUEUED (will retry) | FAILED | DEAD_LETTER
+  int32 retry_count = 4;
+}
+
+message AcknowledgeCancelRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int64 assignment_epoch = 3;
+  CancelReason cancel_reason = 4;          // Echo back from heartbeat
+  bytes partial_result = 5;
+}
+
+message AcknowledgeCancelResponse {
+  bool success = 1;
+  string job_id = 2;
+  JobState state = 3;                       // CANCELLED (terminal)
+}
+
+message ReportSuspendedRequest {
+  string job_id = 1;
+  string worker_id = 2;
+  int64 assignment_epoch = 3;
+  string suspend_reason = 4;               // Echo back from heartbeat
+}
+
+message ReportSuspendedResponse {
+  bool success = 1;
+  string job_id = 2;
+  JobState state = 3;                       // SUSPENDED
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Progress & AI-Native Extensions
+// ═══════════════════════════════════════════════════════════
+
+message JobProgress {
+  // Standard progress
+  int32 percent = 1;
+  string current_step = 2;
+  int32 steps_completed = 3;
+  int32 steps_total = 4;                    // 0 = unknown (e.g., agent loops)
+  bytes checkpoint_payload = 5;             // Opaque checkpoint for crash recovery
+  map<string, string> custom_metadata = 6;
+
+  // AI-native extensions (AHCP Full)
+  TokenBudgetStatus token_budget = 10;
+  HITLState hitl_state = 11;
+  OperationCategory current_operation = 12;
+}
+
+// Token budget tracking (AI-native extension).
+message TokenBudgetStatus {
+  int64 input_tokens_consumed = 1;
+  int64 output_tokens_consumed = 2;
+  int64 token_budget_limit = 3;             // 0 = unlimited
+  string model_id = 4;
+}
+
+// HITL interrupt state — sent by worker to request human approval.
+message HITLState {
+  string hitl_request_id = 1;               // Unique per HITL request within a job
+  string hitl_action = 2;
+  HITLRiskLevel hitl_risk_level = 3;
+  google.protobuf.Timestamp hitl_requested_at = 4;
+  int64 hitl_timeout_ms = 5;
+}
+
+// HITL resolution — delivered by scheduler via JobHeartbeatResponse.
+message HITLResolution {
+  string hitl_request_id = 1;               // Correlates to HITLState.hitl_request_id
+  HITLOutcome outcome = 2;
+  bytes resolution_payload = 3;             // Approval data, rejection reason, etc.
+}
